@@ -1,18 +1,23 @@
 # Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
 # More GitHub Actions for Azure: https://github.com/Azure/actions
 
-name: Build and deploy ASP.Net Core app to Azure Web App - samplewebapptailspin
+name: Build and deploy ASP.Net Core app to Azure Web App - devtools-actions-sample
 
 on:
   push:
     branches:
       - main
+      - development
+  pull_request:
+    branches: 
+      - main
+      - development
   workflow_dispatch:
 
 jobs:
-  build:
+  build-prod:
     runs-on: windows-latest
-
+    if: ${{ github.ref == 'refs/heads/main' }}
     steps:
       - uses: actions/checkout@v2
 
@@ -33,10 +38,35 @@ jobs:
         with:
           name: .net-app
           path: ${{env.DOTNET_ROOT}}/myapp
-
-  deploy:
+          
+  build-dev:
     runs-on: windows-latest
-    needs: build
+    if: ${{ github.head_ref	== 'refs/heads/development' || github.ref == 'refs/heads/development' }}
+    steps:
+      - uses: actions/checkout@v2
+      
+      - name: Set up .NET Core
+        uses: actions/setup-dotnet@v1
+        with:
+          dotnet-version: '6.0.x'
+          include-prerelease: true
+
+      - name: Build with dotnet
+        run: dotnet build --configuration Release
+
+      - name: dotnet publish
+        run: dotnet publish -c Release -o ${{env.DOTNET_ROOT}}/myapp
+
+      - name: Upload artifact for deployment job
+        uses: actions/upload-artifact@v2
+        with:
+          name: .net-app
+          path: ${{env.DOTNET_ROOT}}/myapp  
+
+  deploy-prod:
+    runs-on: windows-latest
+    if: ${{ github.ref == 'refs/heads/main' }}
+    needs: build-prod
     environment:
       name: 'Production'
       url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
@@ -53,5 +83,29 @@ jobs:
         with:
           app-name: 'samplewebapptailspin'
           slot-name: 'Production'
-          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_30141222D7534D74949F002C7753FDA3 }}
+          publish-profile: ${{ secrets.PROD_ENV_PROFILE }}
+          package: .
+
+  deploy-dev:
+    runs-on: windows-latest
+    if: ${{ github.ref == 'refs/heads/development' }}
+    needs: build-dev
+    environment:
+      name: 'Development'
+      url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
+
+    steps:
+      
+      - name: Download artifact from build job
+        uses: actions/download-artifact@v2
+        with:
+          name: .net-app
+
+      - name: Deploy to Azure Web App
+        id: deploy-to-webapp
+        uses: azure/webapps-deploy@v2
+        with:
+          app-name: 'samplewebapptailspin'
+          slot-name: 'dev'
+          publish-profile: ${{ secrets.DEV_ENV_PROFILE }}
           package: .
